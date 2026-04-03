@@ -21,11 +21,9 @@ import optuna
 
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline      import Pipeline as ImbPipeline
-from lightgbm               import LGBMClassifier
 from sklearn.base           import BaseEstimator, TransformerMixin
 from sklearn.calibration    import calibration_curve
 from sklearn.compose        import ColumnTransformer
-from sklearn.ensemble       import RandomForestClassifier
 from sklearn.metrics        import (
     ConfusionMatrixDisplay,
     RocCurveDisplay,
@@ -47,30 +45,28 @@ class ChurnFeatureEngineer(BaseEstimator, TransformerMixin):
     """
     Sklearn-compatible transformer that derives domain features from raw columns.
 
-    Designed to sit as the first step of a Pipeline so that all derived
-    features are created consistently during both training and inference.
+    The four base features are always derived. An optional extra_features
+    list can be passed from the notebook to add experimental features
+    without touching helpers.py.
 
-    Derived features
-    ----------------
+    Base derived features
+    ---------------------
     BalanceSalaryRatio     : Balance / (EstimatedSalary + 1)
-                             Captures financial stress — a high balance relative
-                             to salary may indicate a customer parking savings
-                             before leaving.
     IsActive_by_CreditCard : IsActiveMember × HasCrCard
-                             Interaction term; truly engaged customers tend to
-                             be both active AND card-holders.
     ProductsPerYear        : NumOfProducts / (Tenure + 1)
-                             Acquisition rate; a customer who loaded up on
-                             products quickly may churn faster.
     AgeGroup               : Age bucketed into Young / Middle / Senior.
-                             Captures non-linear age effects that a raw numeric
-                             feature would miss.
 
-    Notes
-    -----
-    The +1 denominators prevent division-by-zero for zero-salary or
-    zero-tenure records without meaningfully distorting the distribution.
+    Parameters
+    ----------
+    extra_features : list[Callable] | None
+                     Each callable receives the DataFrame after base features
+                     are added and returns it with one or more columns appended.
+                     Applied in order. Define in the notebook, e.g.:
+                     [lambda X: X.assign(AgeBalance=X["Age"] * X["Balance"])]
     """
+
+    def __init__(self, extra_features: list | None = None):
+        self.extra_features = extra_features
 
     def fit(self, X: pd.DataFrame, y=None) -> "ChurnFeatureEngineer":
         """No fitting required — all transforms are stateless."""
@@ -78,7 +74,7 @@ class ChurnFeatureEngineer(BaseEstimator, TransformerMixin):
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         """
-        Apply feature derivations to X and return the augmented DataFrame.
+        Apply base feature derivations, then any extra_features, in order.
 
         Parameters
         ----------
@@ -86,7 +82,7 @@ class ChurnFeatureEngineer(BaseEstimator, TransformerMixin):
 
         Returns
         -------
-        pd.DataFrame with original columns plus the four derived features.
+        pd.DataFrame with original columns plus all derived features.
         """
         X = X.copy()
         X["BalanceSalaryRatio"]     = X["Balance"] / (X["EstimatedSalary"] + 1)
@@ -97,66 +93,77 @@ class ChurnFeatureEngineer(BaseEstimator, TransformerMixin):
             bins=[0, 35, 55, 100],
             labels=["Young", "Middle", "Senior"],
         ).astype(str)
+        if self.extra_features is not None:
+            for fn in self.extra_features:
+                X = fn(X)
         return X
 
 # =============================================================================
 # 2. PIPELINE CONSTRUCTION
 # =============================================================================
 
-NUM_FEATURES: list[str] = [
-    "CreditScore", "Age", "Tenure", "Balance",
-    "NumOfProducts", "EstimatedSalary",
-    "BalanceSalaryRatio", "ProductsPerYear",
-]
-CAT_FEATURES: list[str]         = ["Geography", "Gender", "AgeGroup"]
-PASSTHROUGH_FEATURES: list[str] = ["HasCrCard", "IsActiveMember", "IsActive_by_CreditCard"]
-
-TREE_MODELS:   frozenset[str] = frozenset({"Random Forest", "XGBoost", "LightGBM", "Decision Tree"})
-LINEAR_MODELS: frozenset[str] = frozenset({"Logistic Regression"})
-
-
-def _make_preprocessor() -> ColumnTransformer:
+def _make_preprocessor(
+    num_features: list[str],
+    cat_features: list[str],
+    passthrough_features: list[str],
+) -> ColumnTransformer:
     """
-    Instantiate a fresh ColumnTransformer.
+    Instantiate a fresh ColumnTransformer from caller-supplied column lists.
 
     Called inside build_pipeline so each pipeline owns an independent,
     unfitted preprocessor — prevents accidental sharing of fitted state
     across multiple pipeline instances during cross-validation.
+
+    Parameters
+    ----------
+    num_features         : Numeric columns to scale with StandardScaler.
+    cat_features         : Categorical columns to one-hot encode.
+    passthrough_features : Binary columns passed through unchanged.
     """
     return ColumnTransformer(
         transformers=[
-            ("num",  StandardScaler(), NUM_FEATURES),
-            ("cat",  OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False), CAT_FEATURES),
-            ("pass", "passthrough", PASSTHROUGH_FEATURES),
+            ("num",  StandardScaler(), num_features),
+            ("cat",  OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False), cat_features),
+            ("pass", "passthrough", passthrough_features),
         ],
         remainder="drop",
     )
 
-
-def build_pipeline(classifier, use_smote: bool = False) -> Pipeline | ImbPipeline:
+def build_pipeline(
+    classifier,
+    num_features: list[str],
+    cat_features: list[str],
+    passthrough_features: list[str],
+    use_smote: bool = False,
+    extra_features: list | None = None,
+) -> Pipeline | ImbPipeline:
     """
     Assemble the full modelling pipeline for a given classifier.
 
     Pipeline order
     --------------
-    1. ChurnFeatureEngineer  — derives domain features (stateless).
+    1. ChurnFeatureEngineer  — derives base + any extra features.
     2. ColumnTransformer     — scales numerics, encodes categoricals.
     3. SMOTE (optional)      — oversamples minority class on training folds only.
     4. classifier            — any sklearn-compatible estimator.
 
     Parameters
     ----------
-    classifier : Unfitted sklearn-compatible estimator.
-    use_smote  : If True, inserts SMOTE after preprocessing and returns an
-                 ImbPipeline (required for imblearn compatibility).
+    classifier           : Unfitted sklearn-compatible estimator.
+    num_features         : Numeric columns to pass to StandardScaler.
+    cat_features         : Categorical columns to pass to OneHotEncoder.
+    passthrough_features : Binary columns passed through unchanged.
+    use_smote            : If True, inserts SMOTE after preprocessing.
+    extra_features       : list[Callable] | None — passed to ChurnFeatureEngineer.
+                           Each callable adds one or more experimental columns.
 
     Returns
     -------
     Fitted-ready Pipeline or ImbPipeline.
     """
     steps = [
-        ("engineer",     ChurnFeatureEngineer()),
-        ("preprocessor", _make_preprocessor()),
+        ("engineer",     ChurnFeatureEngineer(extra_features=extra_features)),
+        ("preprocessor", _make_preprocessor(num_features, cat_features, passthrough_features)),
     ]
     if use_smote:
         steps.append(("smote", SMOTE(random_state=42)))
@@ -164,8 +171,7 @@ def build_pipeline(classifier, use_smote: bool = False) -> Pipeline | ImbPipelin
 
     PipelineClass = ImbPipeline if use_smote else Pipeline
     return PipelineClass(steps)
-
-
+    
 # =============================================================================
 # 3. HYPERPARAMETER TUNING
 # =============================================================================
@@ -220,85 +226,43 @@ def run_optuna_study(
     best_params = {**study.best_params, **best_params_update}
     return study, best_params
 
-
-def lgbm_objective(
-    trial: optuna.Trial,
+def make_objective(
+    model_fn: Callable,
+    param_space: dict,
     X_train: pd.DataFrame,
     y_train: pd.Series,
     skf,
-    seed: int,
     best_strategy: str,
-) -> float:
+) -> Callable:
     """
-    Optuna objective for LightGBM — maximises 5-fold CV F1 on the churn class.
+    Build a generic Optuna objective from a model factory and a param space.
+
+    This keeps helpers.py experiment-agnostic — all model choices and search
+    space definitions live in the notebook, not here.
 
     Parameters
     ----------
-    trial         : Optuna trial object.
+    model_fn      : Callable(**params) → unfitted sklearn estimator.
+                    Define this in the notebook, e.g.:
+                    lambda **p: LGBMClassifier(**p, verbosity=-1, random_state=SEED)
+    param_space   : Dict of {param_name: Callable(trial) → value}.
+                    Each value is a lambda wrapping a trial.suggest_* call, e.g.:
+                    {"n_estimators": lambda t: t.suggest_int("n_estimators", 100, 1000)}
     X_train       : Training features.
     y_train       : Training labels.
     skf           : StratifiedKFold splitter.
-    seed          : Random seed for reproducibility.
     best_strategy : 'SMOTE' or 'class_weight' — controls pipeline construction.
 
     Returns
     -------
-    Mean F1 score across CV folds.
+    objective : Callable(trial) → float, ready to pass to run_optuna_study.
     """
-    param = {
-        "n_estimators"     : trial.suggest_int("n_estimators", 100, 1000),
-        "learning_rate"    : trial.suggest_float("learning_rate", 1e-3, 0.3, log=True),
-        "num_leaves"       : trial.suggest_int("num_leaves", 20, 200),
-        "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
-        "subsample"        : trial.suggest_float("subsample", 0.5, 1.0),
-        "colsample_bytree" : trial.suggest_float("colsample_bytree", 0.5, 1.0),
-        "reg_alpha"        : trial.suggest_float("reg_alpha", 1e-4, 10.0, log=True),
-        "reg_lambda"       : trial.suggest_float("reg_lambda", 1e-4, 10.0, log=True),
-        "verbosity"        : -1,
-        "random_state"     : seed,
-        "n_jobs"           : -1,
-    }
-    pipe = build_pipeline(LGBMClassifier(**param), use_smote=(best_strategy == "SMOTE"))
-    return cross_val_score(pipe, X_train, y_train, cv=skf, scoring="f1", n_jobs=-1).mean()
-
-
-def rf_objective(
-    trial: optuna.Trial,
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    skf,
-    seed: int,
-    best_strategy: str,
-) -> float:
-    """
-    Optuna objective for Random Forest — maximises 5-fold CV F1 on the churn class.
-
-    Parameters
-    ----------
-    trial         : Optuna trial object.
-    X_train       : Training features.
-    y_train       : Training labels.
-    skf           : StratifiedKFold splitter.
-    seed          : Random seed for reproducibility.
-    best_strategy : 'SMOTE' or 'class_weight' — controls pipeline construction.
-
-    Returns
-    -------
-    Mean F1 score across CV folds.
-    """
-    param = {
-        "n_estimators"     : trial.suggest_int("n_estimators", 100, 500),
-        "max_depth"        : trial.suggest_int("max_depth", 5, 30),
-        "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
-        "min_samples_leaf" : trial.suggest_int("min_samples_leaf", 1, 10),
-        "max_features"     : trial.suggest_categorical("max_features", ["sqrt", "log2"]),
-        "bootstrap"        : True,
-        "random_state"     : seed,
-        "n_jobs"           : -1,
-    }
-    pipe = build_pipeline(RandomForestClassifier(**param), use_smote=(best_strategy == "SMOTE"))
-    return cross_val_score(pipe, X_train, y_train, cv=skf, scoring="f1", n_jobs=-1).mean()
-
+    def objective(trial: optuna.Trial) -> float:
+        params = {k: v(trial) for k, v in param_space.items()}
+        pipe   = build_pipeline(model_fn(**params), use_smote=(best_strategy == "SMOTE"))
+        return cross_val_score(pipe, X_train, y_train, cv=skf, scoring="f1", n_jobs=-1).mean()
+    return objective
+    
 # =============================================================================
 # 4. THRESHOLD SELECTION
 # =============================================================================
@@ -363,7 +327,7 @@ def find_optimal_threshold(
 # 5. SHAP UTILITIES
 # =============================================================================
 
-def build_shap_explainer(classifier, background_data: pd.DataFrame, model_name: str):
+def build_shap_explainer(classifier, background_data: pd.DataFrame, model_type: str):
     """
     Return the appropriate SHAP explainer for the given model type.
 
@@ -375,7 +339,9 @@ def build_shap_explainer(classifier, background_data: pd.DataFrame, model_name: 
     ----------
     classifier      : Fitted sklearn-compatible estimator (extracted from pipeline).
     background_data : Transformed test data used as the SHAP background.
-    model_name      : Name string used to look up the explainer strategy.
+    model_type      : 'tree' or 'linear'. Caller declares this in the notebook
+                      next to the model definition — helpers never needs to know
+                      the model's name.
 
     Returns
     -------
@@ -383,19 +349,18 @@ def build_shap_explainer(classifier, background_data: pd.DataFrame, model_name: 
 
     Raises
     ------
-    ValueError if model_name is not registered in TREE_MODELS or LINEAR_MODELS.
+    ValueError if model_type is not 'tree' or 'linear'.
     """
-    if model_name in TREE_MODELS:
+    if model_type == "tree":
         return shap.TreeExplainer(classifier)
-    elif model_name in LINEAR_MODELS:
+    elif model_type == "linear":
         background = shap.kmeans(background_data, k=50)
         return shap.KernelExplainer(classifier.predict_proba, background)
     else:
         raise ValueError(
-            f"No SHAP strategy defined for '{model_name}'. "
-            f"Add it to TREE_MODELS or LINEAR_MODELS in helpers.py."
+            f"model_type must be 'tree' or 'linear', got '{model_type}'. "
+            f"Set MODEL_TYPE in the notebook next to your model definition."
         )
-
 
 def get_shap_values_class1(shap_values, index: int | None = None) -> np.ndarray:
     """
@@ -428,6 +393,9 @@ def get_shap_values_class1(shap_values, index: int | None = None) -> np.ndarray:
 def get_transformed_test_data(
     pipeline: Pipeline,
     X_test: pd.DataFrame,
+    num_features: list[str],
+    cat_features: list[str],
+    passthrough_features: list[str],
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Extract the fully-transformed test set and reconstructed feature names
@@ -438,13 +406,16 @@ def get_transformed_test_data(
 
     Parameters
     ----------
-    pipeline : Fitted pipeline with steps named 'engineer' and 'preprocessor'.
-    X_test   : Raw test features (same format as training input).
+    pipeline             : Fitted pipeline with 'engineer' and 'preprocessor' steps.
+    X_test               : Raw test features (same format as training input).
+    num_features         : Numeric feature list used when building the pipeline.
+    cat_features         : Categorical feature list used when building the pipeline.
+    passthrough_features : Passthrough feature list used when building the pipeline.
 
     Returns
     -------
-    X_test_df        : Transformed test set as a named DataFrame.
-    all_feature_names: Ordered list of feature names matching the columns.
+    X_test_df         : Transformed test set as a named DataFrame.
+    all_feature_names : Ordered list of feature names matching the columns.
     """
     engineer     = pipeline.named_steps["engineer"]
     preprocessor = pipeline.named_steps["preprocessor"]
@@ -452,11 +423,10 @@ def get_transformed_test_data(
     X_engineered  = engineer.transform(X_test)
     X_transformed = preprocessor.transform(X_engineered)
 
-    ohe_features      = preprocessor.named_transformers_["cat"].get_feature_names_out(CAT_FEATURES)
-    all_feature_names = NUM_FEATURES + list(ohe_features) + PASSTHROUGH_FEATURES
+    ohe_features      = preprocessor.named_transformers_["cat"].get_feature_names_out(cat_features)
+    all_feature_names = num_features + list(ohe_features) + passthrough_features
 
     return pd.DataFrame(X_transformed, columns=all_feature_names), all_feature_names
-
 
 # =============================================================================
 # 6. EDA PLOTS
@@ -845,6 +815,42 @@ def plot_error_analysis(
 # =============================================================================
 # 8. SHAP PLOTS
 # =============================================================================
+
+def plot_shap_summary(
+    sv: np.ndarray,
+    X_test_df: pd.DataFrame,
+    save_dir: str = "reports/figures",
+) -> None:
+    """
+    Plot the SHAP beeswarm summary and bar importance chart, and print
+    the top 10 features by mean absolute SHAP value.
+
+    Parameters
+    ----------
+    sv        : SHAP values array for class 1, shape (n_samples, n_features).
+    X_test_df : Transformed test set as a named DataFrame.
+    save_dir  : Directory to save figures. Created if it doesn't exist.
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    plt.figure()
+    shap.summary_plot(sv, X_test_df, show=False)
+    plt.title("SHAP Summary — Feature Impact on Churn", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(f"{save_dir}/shap_summary.png", bbox_inches="tight")
+    plt.show()
+
+    plt.figure()
+    shap.summary_plot(sv, X_test_df, plot_type="bar", show=False)
+    plt.title("SHAP Feature Importance (Mean |SHAP|)", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(f"{save_dir}/shap_bar.png", bbox_inches="tight")
+    plt.show()
+
+    mean_shap = pd.Series(np.abs(sv).mean(axis=0), index=X_test_df.columns)
+    print("\nTop 10 features by mean |SHAP|:")
+    print(mean_shap.sort_values(ascending=False).head(10).to_string())
+
 
 def plot_shap_waterfall(
     explainer,
