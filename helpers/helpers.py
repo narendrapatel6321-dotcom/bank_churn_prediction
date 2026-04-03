@@ -233,6 +233,10 @@ def make_objective(
     y_train: pd.Series,
     skf,
     best_strategy: str,
+    num_features: list[str],
+    cat_features: list[str],
+    passthrough_features: list[str],
+    extra_features: list | None = None,
 ) -> Callable:
     """
     Build a generic Optuna objective from a model factory and a param space.
@@ -242,16 +246,20 @@ def make_objective(
 
     Parameters
     ----------
-    model_fn      : Callable(**params) → unfitted sklearn estimator.
-                    Define this in the notebook, e.g.:
-                    lambda **p: LGBMClassifier(**p, verbosity=-1, random_state=SEED)
-    param_space   : Dict of {param_name: Callable(trial) → value}.
-                    Each value is a lambda wrapping a trial.suggest_* call, e.g.:
-                    {"n_estimators": lambda t: t.suggest_int("n_estimators", 100, 1000)}
-    X_train       : Training features.
-    y_train       : Training labels.
-    skf           : StratifiedKFold splitter.
-    best_strategy : 'SMOTE' or 'class_weight' — controls pipeline construction.
+    model_fn             : Callable(**params) → unfitted sklearn estimator.
+                           Define this in the notebook, e.g.:
+                           lambda **p: LGBMClassifier(**p, verbosity=-1, random_state=SEED)
+    param_space          : Dict of {param_name: Callable(trial) → value}.
+                           Each value is a lambda wrapping a trial.suggest_* call, e.g.:
+                           {"n_estimators": lambda t: t.suggest_int("n_estimators", 100, 1000)}
+    X_train              : Training features.
+    y_train              : Training labels.
+    skf                  : StratifiedKFold splitter.
+    best_strategy        : 'SMOTE' or 'class_weight' — controls pipeline construction.
+    num_features         : Numeric feature list — passed to build_pipeline.
+    cat_features         : Categorical feature list — passed to build_pipeline.
+    passthrough_features : Passthrough feature list — passed to build_pipeline.
+    extra_features       : Optional list of feature engineering callables.
 
     Returns
     -------
@@ -259,7 +267,14 @@ def make_objective(
     """
     def objective(trial: optuna.Trial) -> float:
         params = {k: v(trial) for k, v in param_space.items()}
-        pipe   = build_pipeline(model_fn(**params), use_smote=(best_strategy == "SMOTE"))
+        pipe   = build_pipeline(
+            classifier           = model_fn(**params),
+            num_features         = num_features,
+            cat_features         = cat_features,
+            passthrough_features = passthrough_features,
+            use_smote            = (best_strategy == "SMOTE"),
+            extra_features       = extra_features,
+        )
         return cross_val_score(pipe, X_train, y_train, cv=skf, scoring="f1", n_jobs=-1).mean()
     return objective
     
@@ -300,9 +315,8 @@ def find_optimal_threshold(
     recalls        : np.ndarray
     thresholds     : np.ndarray
     f1_arr         : np.ndarray
-    """
-    
-    y_probas = cross_val_predict(pipeline, X_train, y_train, cv=skf, method="predict_proba")[:, 1]
+    """   
+    y_probas = cross_val_predict(pipeline, X_train, y_train, cv=skf, method="predict_proba",n_jobs=-1)[:, 1]
     precisions, recalls, thresholds = precision_recall_curve(y_train, y_probas)
     f1_arr    = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
     valid_idx = np.where(recalls[:-1] >= recall_floor)[0]
@@ -458,7 +472,6 @@ def plot_class_imbalance(train_df: pd.DataFrame) -> None:
     plt.tight_layout()
     plt.show()
 
-
 def plot_kde_by_churn(train_df: pd.DataFrame, cols: list[str]) -> None:
     """
     Plot KDE distributions of numeric columns split by churn status.
@@ -481,7 +494,6 @@ def plot_kde_by_churn(train_df: pd.DataFrame, cols: list[str]) -> None:
 
     plt.tight_layout()
     plt.show()
-
 
 def plot_churn_rate_bar(
     df: pd.DataFrame,
@@ -538,7 +550,8 @@ def plot_correlation_heatmap(train_df: pd.DataFrame, threshold: float = 0.7) -> 
     threshold : Correlation magnitude above which pairs are flagged. Default 0.7.
     """
     numeric_cols = train_df.select_dtypes(include="number")
-    mask         = np.triu(np.ones_like(numeric_cols.corr(), dtype=bool))
+    corr_matrix = numeric_cols.corr()
+    mask         = np.triu(np.ones_like(corr_matrix, dtype=bool))
 
     fig, ax = plt.subplots(figsize=(10, 7))
     sns.heatmap(numeric_cols.corr(), mask=mask, annot=True, fmt=".2f",
@@ -547,7 +560,7 @@ def plot_correlation_heatmap(train_df: pd.DataFrame, threshold: float = 0.7) -> 
     plt.tight_layout()
     plt.show()
 
-    corr_matrix = numeric_cols.corr().abs()
+    corr_matrix = corr_matrix.abs()
     high_corr   = [
         (c1, c2, corr_matrix.loc[c1, c2])
         for c1 in corr_matrix.columns
@@ -561,7 +574,6 @@ def plot_correlation_heatmap(train_df: pd.DataFrame, threshold: float = 0.7) -> 
             print(f"   {c1} <> {c2} : {val:.3f}")
     else:
         print("No redundant features found.")
-
 
 # =============================================================================
 # 7. EVALUATION PLOTS
