@@ -19,7 +19,7 @@ import shap
 import joblib
 import optuna
 
-from imblearn.over_sampling import SMOTE
+from imblearn.over_sampling import SMOTE, ADASYN
 from imblearn.pipeline      import Pipeline as ImbPipeline
 from sklearn.base           import BaseEstimator, TransformerMixin
 from sklearn.calibration    import calibration_curve
@@ -135,6 +135,7 @@ def build_pipeline(
     cat_features: list[str],
     passthrough_features: list[str],
     use_smote: bool = False,
+    use_adasyn: bool = False,
     extra_features: list | None = None,
 ) -> Pipeline | ImbPipeline:
     """
@@ -144,7 +145,7 @@ def build_pipeline(
     --------------
     1. ChurnFeatureEngineer  — derives base + any extra features.
     2. ColumnTransformer     — scales numerics, encodes categoricals.
-    3. SMOTE (optional)      — oversamples minority class on training folds only.
+    3. SMOTE or ADASYN (optional) — oversamples minority class on training folds only.
     4. classifier            — any sklearn-compatible estimator.
 
     Parameters
@@ -154,22 +155,33 @@ def build_pipeline(
     cat_features         : Categorical columns to pass to OneHotEncoder.
     passthrough_features : Binary columns passed through unchanged.
     use_smote            : If True, inserts SMOTE after preprocessing.
+    use_adasyn           : If True, inserts ADASYN after preprocessing.
+                           use_smote and use_adasyn are mutually exclusive.
     extra_features       : list[Callable] | None — passed to ChurnFeatureEngineer.
                            Each callable adds one or more experimental columns.
 
     Returns
     -------
     Fitted-ready Pipeline or ImbPipeline.
+
+    Raises
+    ------
+    ValueError if both use_smote and use_adasyn are True.
     """
+    if use_smote and use_adasyn:
+        raise ValueError("use_smote and use_adasyn are mutually exclusive. Pick one.")
+
     steps = [
         ("engineer",     ChurnFeatureEngineer(extra_features=extra_features)),
         ("preprocessor", _make_preprocessor(num_features, cat_features, passthrough_features)),
     ]
     if use_smote:
-        steps.append(("smote", SMOTE(random_state=42)))
+        steps.append(("sampler", SMOTE(random_state=42)))
+    elif use_adasyn:
+        steps.append(("sampler", ADASYN(random_state=42)))
     steps.append(("classifier", classifier))
 
-    PipelineClass = ImbPipeline if use_smote else Pipeline
+    PipelineClass = ImbPipeline if (use_smote or use_adasyn) else Pipeline
     return PipelineClass(steps)
     
 # =============================================================================
@@ -273,6 +285,7 @@ def make_objective(
             cat_features         = cat_features,
             passthrough_features = passthrough_features,
             use_smote            = (best_strategy == "SMOTE"),
+            use_adasyn           = (best_strategy == "ADASYN"),
             extra_features       = extra_features,
         )
         return cross_val_score(pipe, X_train, y_train, cv=skf, scoring="f1", n_jobs=-1).mean()
