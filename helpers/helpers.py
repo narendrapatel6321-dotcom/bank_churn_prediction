@@ -677,7 +677,7 @@ def plot_roc_curve(
     fig, ax = plt.subplots(figsize=(6, 5))
     RocCurveDisplay.from_predictions(
         y_test, y_probas_test, ax=ax, color="#4C9BE8",
-        name=f"{model_name} (AUC = {auc:.3f})",
+        name=f"{model_name}",
     )
     ax.plot([0, 1], [0, 1], "--", color="grey", label="Random baseline")
     ax.set_title("ROC Curve", fontsize=12, fontweight="bold")
@@ -754,8 +754,8 @@ def plot_calibration_curve(
     ax.plot([0, 1], [0, 1], linestyle="--", color="grey", label="Perfect calibration")
     ax.fill_between(prob_pred, prob_pred, prob_true, alpha=0.1, color="#4C9BE8")
     ax.set_xlabel("Mean Predicted Probability")
-    ax.set_ylabel("Fraction of Positives (Actual Churn Rate)")
-    ax.set_title("Calibration Curve — Are Probabilities Trustworthy?",
+    ax.set_ylabel("Fraction of Positives ")
+    ax.set_title("Calibration Curve ",
                  fontsize=12, fontweight="bold")
     ax.legend()
     plt.tight_layout()
@@ -823,7 +823,7 @@ def plot_error_analysis(
         ax.set_ylabel("Count")
         ax.legend(title="Error Type", fontsize=8)
 
-    plt.suptitle("Error Analysis — Where Is the Model Getting It Wrong?",
+    plt.suptitle("Error Analysis",
                  fontsize=13, fontweight="bold")
     plt.tight_layout()
     plt.show()
@@ -831,8 +831,8 @@ def plot_error_analysis(
     n_fn = (error_df["error_type"] == "False Negative").sum()
     n_fp = (error_df["error_type"] == "False Positive").sum()
     print(f"\nTotal errors       : {len(error_df):,} / {len(results_df):,} ({len(error_df)/len(results_df):.1%})")
-    print(f"False Negatives    : {n_fn}  (missed churners — cost: lost customer)")
-    print(f"False Positives    : {n_fp}  (wrong alarms   — cost: wasted retention spend)")
+    print(f"False Negatives    : {n_fn}  (missed churners ")
+    print(f"False Positives    : {n_fp}  (wrong alarms ")
 
     return error_df
 
@@ -981,6 +981,6 @@ def save_pipeline_and_results(
     csv_path = f"{model_dir}/test_predictions.csv"
     results_df.to_csv(csv_path, index=False)
 
-    print(f"Predictions saved → {csv_path}")
+    print(f"Predictions saved -> {csv_path}")
     print(f"   Accuracy : {results_df['correct'].mean():.2%}")
     print(f"   Rows     : {len(results_df):,}")
