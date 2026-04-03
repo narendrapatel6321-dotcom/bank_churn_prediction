@@ -224,7 +224,7 @@ def run_optuna_study(
     def _trial_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
         if trial.state == optuna.trial.TrialState.COMPLETE:
             print(
-                f"  Trial {trial.number:>3} | F1: {trial.value:.4f} | "
+                f"  Trial {trial.number:>3} | Score: {trial.value:.4f} | "
                 f"Params: { {k: round(v, 4) if isinstance(v, float) else v for k, v in trial.params.items()} }"
             )
 
