@@ -28,7 +28,10 @@ from sklearn.metrics        import (
     ConfusionMatrixDisplay,
     RocCurveDisplay,
     confusion_matrix,
+    f1_score,
     precision_recall_curve,
+    recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import (cross_val_score,
                                      cross_val_predict)
@@ -249,29 +252,32 @@ def make_objective(
     cat_features: list[str],
     passthrough_features: list[str],
     extra_features: list | None = None,
+    score_fn: Callable | None = None,
 ) -> Callable:
     """
     Build a generic Optuna objective from a model factory and a param space.
 
-    This keeps helpers.py experiment-agnostic — all model choices and search
-    space definitions live in the notebook, not here.
+    This keeps helpers.py experiment-agnostic — all model choices, search
+    spaces, and scoring logic live in the notebook, not here.
 
     Parameters
     ----------
     model_fn             : Callable(**params) → unfitted sklearn estimator.
-                           Define this in the notebook, e.g.:
-                           lambda **p: LGBMClassifier(**p, verbosity=-1, random_state=SEED)
+                           e.g. lambda **p: LGBMClassifier(**p, verbosity=-1)
     param_space          : Dict of {param_name: Callable(trial) → value}.
-                           Each value is a lambda wrapping a trial.suggest_* call, e.g.:
-                           {"n_estimators": lambda t: t.suggest_int("n_estimators", 100, 1000)}
+                           e.g. {"n_estimators": lambda t: t.suggest_int("n_estimators", 100, 1000)}
     X_train              : Training features.
     y_train              : Training labels.
     skf                  : StratifiedKFold splitter.
-    best_strategy        : 'SMOTE' or 'class_weight' — controls pipeline construction.
+    best_strategy        : 'SMOTE', 'ADASYN', or 'class_weight'.
     num_features         : Numeric feature list — passed to build_pipeline.
     cat_features         : Categorical feature list — passed to build_pipeline.
     passthrough_features : Passthrough feature list — passed to build_pipeline.
     extra_features       : Optional list of feature engineering callables.
+    score_fn             : Callable(y_true, y_pred, y_proba) → float, or None.
+                           If provided, uses cross_val_predict to generate OOF
+                           predictions and passes them to score_fn.
+                           If None, falls back to fast cross_val_score with F1.
 
     Returns
     -------
@@ -288,7 +294,20 @@ def make_objective(
             use_adasyn           = (best_strategy == "ADASYN"),
             extra_features       = extra_features,
         )
-        return cross_val_score(pipe, X_train, y_train, cv=skf, scoring="f1", n_jobs=-1).mean()
+
+        if score_fn is not None:
+            y_proba = cross_val_predict(
+                pipe, X_train, y_train, cv=skf,
+                method="predict_proba", n_jobs=-1,
+            )[:, 1]
+            y_pred  = (y_proba >= 0.5).astype(int)
+            return score_fn(y_train, y_pred, y_proba)
+        else:
+            return cross_val_score(
+                pipe, X_train, y_train, cv=skf,
+                scoring="f1", n_jobs=-1,
+            ).mean()
+
     return objective
     
 # =============================================================================
