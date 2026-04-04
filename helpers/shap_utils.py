@@ -110,7 +110,7 @@ def get_transformed_test_data(
 def plot_shap_summary(
     sv: np.ndarray,
     X_test_df: pd.DataFrame,
-    save_dir: str = "reports/figures",
+    save_dir: str | None = None,
 ) -> None:
     """
     Plot the SHAP beeswarm summary and bar importance chart, and print
@@ -122,20 +122,22 @@ def plot_shap_summary(
     X_test_df : Transformed test set as a named DataFrame.
     save_dir  : Directory to save figures. Created if it doesn't exist.
     """
-    os.makedirs(save_dir, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True) if save_dir else None
 
     plt.figure()
     shap.summary_plot(sv, X_test_df, show=False)
     plt.title("SHAP Summary — Feature Impact on Churn", fontsize=12, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(f"{save_dir}/shap_summary.png", bbox_inches="tight")
+    if save_dir:
+        plt.savefig(f"{save_dir}/shap_01_summary.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     plt.figure()
     shap.summary_plot(sv, X_test_df, plot_type="bar", show=False)
     plt.title("SHAP Feature Importance (Mean |SHAP|)", fontsize=12, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(f"{save_dir}/shap_bar.png", bbox_inches="tight")
+    if save_dir:
+        plt.savefig(f"{save_dir}/shap_02_bar.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     mean_shap = pd.Series(np.abs(sv).mean(axis=0), index=X_test_df.columns)
@@ -150,7 +152,7 @@ def plot_shap_waterfall(
     y_probas_test: np.ndarray,
     y_test,
     idx: int,
-    save_path = str | None = None,
+    save_path : str | None = None,
 ) -> None:
     """
     Plot a SHAP waterfall chart explaining a single prediction.
@@ -195,6 +197,5 @@ def plot_shap_waterfall(
     plt.tight_layout()
     if save_path:         
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.gcf()..savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
- 
