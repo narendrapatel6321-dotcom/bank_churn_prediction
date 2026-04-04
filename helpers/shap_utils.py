@@ -40,7 +40,7 @@ def build_shap_explainer(classifier, background_data: pd.DataFrame, model_type: 
             f"Set MODEL_TYPE in the notebook next to your model definition."
         )
 
-def get_shap_values_class1(shap_values, index: int | None = None) -> np.ndarray:
+def get_shap_values_class1(shap_values, index: int | None = None,) -> np.ndarray:
     """
     Extract SHAP values for the positive class (churn = 1).
 
@@ -150,6 +150,7 @@ def plot_shap_waterfall(
     y_probas_test: np.ndarray,
     y_test,
     idx: int,
+    save_path = str | None = None,
 ) -> None:
     """
     Plot a SHAP waterfall chart explaining a single prediction.
@@ -165,6 +166,7 @@ def plot_shap_waterfall(
     y_probas_test     : Predicted probabilities for the full test set.
     y_test            : True test labels.
     idx               : Index of the customer in the test set.
+    save_path         : Path to save plot.
     """
     s_vals   = explainer.shap_values(customer.values.reshape(1, -1))
     wf_values = get_shap_values_class1(s_vals, index=0)
@@ -191,6 +193,8 @@ def plot_shap_waterfall(
     plt.title("SHAP Waterfall — Why this customer was flagged",
               fontsize=11, fontweight="bold")
     plt.tight_layout()
-    plt.savefig("reports/figures/shap_waterfall.png", bbox_inches="tight")
+    if save_path:         
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
  
