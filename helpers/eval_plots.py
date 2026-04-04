@@ -22,6 +22,7 @@ def plot_threshold_curve(
     f1_arr: np.ndarray,
     best_threshold: float,
     recall_floor: float,
+    save_path : str | None = None
 ) -> None:
     """
     Plot Precision, Recall, and F1 against decision threshold, marking the
@@ -35,6 +36,7 @@ def plot_threshold_curve(
     f1_arr         : F1 values (aligned to thresholds).
     best_threshold : The chosen operating threshold to mark.
     recall_floor   : Minimum acceptable recall — shown as a horizontal guideline.
+    save_path      : Path to save plot.
     """
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(thresholds, f1_arr[:-1],     label="F1",        color="#4C9BE8", lw=2)
@@ -49,6 +51,9 @@ def plot_threshold_curve(
     ax.set_title("Threshold vs Precision / Recall / F1", fontsize=13, fontweight="bold")
     ax.legend()
     plt.tight_layout()
+    if save_path:              
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -57,6 +62,7 @@ def plot_confusion_matrix(
     y_pred_test: np.ndarray,
     best_threshold: float,
     model_name: str,
+    save_path : str | None = None
 ) -> None:
     """
     Plot the confusion matrix at the chosen decision threshold.
@@ -67,6 +73,7 @@ def plot_confusion_matrix(
     y_pred_test    : Binary predictions at the chosen threshold.
     best_threshold : Operating threshold — shown in the title for context.
     model_name     : Name label for the plot title.
+    save_path      : Path to save plot.
     """
     fig, ax = plt.subplots(figsize=(5, 4))
     ConfusionMatrixDisplay(
@@ -78,6 +85,9 @@ def plot_confusion_matrix(
         fontsize=12, fontweight="bold",
     )
     plt.tight_layout()
+    if save_path:              
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -86,6 +96,7 @@ def plot_roc_curve(
     y_probas_test: np.ndarray,
     auc: float,
     model_name: str,
+    save_path : str | None = None
 ) -> None:
     """
     Plot the ROC curve with AUC annotated in the legend.
@@ -96,6 +107,7 @@ def plot_roc_curve(
     y_probas_test : Predicted probabilities for the positive class.
     auc           : ROC-AUC score.
     model_name    : Name label for the plot legend.
+    save_path     : Path to save plot.
     """
     fig, ax = plt.subplots(figsize=(6, 5))
     RocCurveDisplay.from_predictions(
@@ -106,6 +118,9 @@ def plot_roc_curve(
     ax.set_title("ROC Curve", fontsize=12, fontweight="bold")
     ax.legend(fontsize=9)
     plt.tight_layout()
+    if save_path:              
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -116,6 +131,7 @@ def plot_pr_curve(
     recall: float,
     precision: float,
     f1: float,
+    save_path : str | None = None
 ) -> None:
     """
     Plot the Precision-Recall curve with the operating point marked.
@@ -128,6 +144,7 @@ def plot_pr_curve(
     recall         : Recall at the operating point.
     precision      : Precision at the operating point.
     f1             : F1 at the operating point.
+    save_path      : Path to save plot.
     """
     prec_curve, rec_curve, _ = precision_recall_curve(y_test, y_probas_test)
 
@@ -144,6 +161,9 @@ def plot_pr_curve(
     ax.set_title("Precision-Recall Curve", fontsize=12, fontweight="bold")
     ax.legend(fontsize=8)
     plt.tight_layout()
+    if save_path:              
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -152,6 +172,7 @@ def plot_calibration_curve(
     y_probas_test: np.ndarray,
     model_name: str,
     n_bins: int = 10,
+    save_path : str | None = None
 ) -> None:
     """
     Plot a reliability (calibration) curve to assess whether predicted
@@ -168,6 +189,7 @@ def plot_calibration_curve(
     y_probas_test : Predicted probabilities for the positive class.
     model_name    : Name label for the plot legend.
     n_bins        : Number of calibration bins. Default 10.
+    save_path     : Path to save plot.
     """
     prob_true, prob_pred = calibration_curve(y_test, y_probas_test, n_bins=n_bins)
 
@@ -182,6 +204,9 @@ def plot_calibration_curve(
                  fontsize=12, fontweight="bold")
     ax.legend()
     plt.tight_layout()
+    if save_path:              
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
 
@@ -190,6 +215,7 @@ def plot_error_analysis(
     y_test: pd.Series,
     y_pred_test: np.ndarray,
     y_probas_test: np.ndarray,
+    save_path : str | None = None
 ) -> pd.DataFrame:
     """
     Analyse false negatives and false positives by demographic breakdown.
@@ -204,6 +230,7 @@ def plot_error_analysis(
     y_test        : True test labels.
     y_pred_test   : Binary predictions at the chosen threshold.
     y_probas_test : Predicted probabilities for the positive class.
+    save_path     : Path to save plot.
 
     Returns
     -------
@@ -249,13 +276,16 @@ def plot_error_analysis(
     plt.suptitle("Error Analysis",
                  fontsize=13, fontweight="bold")
     plt.tight_layout()
+    if save_path:              
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
     n_fn = (error_df["error_type"] == "False Negative").sum()
     n_fp = (error_df["error_type"] == "False Positive").sum()
     print(f"\nTotal errors       : {len(error_df):,} / {len(results_df):,} ({len(error_df)/len(results_df):.1%})")
-    print(f"False Negatives    : {n_fn}  (missed churners ")
-    print(f"False Positives    : {n_fp}  (wrong alarms ")
+    print(f"False Negatives    : {n_fn}  (missed churners) ")
+    print(f"False Positives    : {n_fp}  (wrong alarms) ")
 
     return error_df
 
