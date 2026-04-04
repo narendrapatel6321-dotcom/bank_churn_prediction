@@ -1,19 +1,29 @@
+# ─────────────────────────────────────────────────────────────────────────────
 # Streamlit app runtime dependencies
+# Versions pinned to match the Colab training environment exactly.
+# The saved pipeline (.joblib) was created with these versions — mismatches
+# will cause pickle deserialization errors on deployment.
+# If you retrain the model on a new Colab runtime, re-run the version-check
+# cell in the notebook and update the pins below accordingly.
+# ─────────────────────────────────────────────────────────────────────────────
+
 streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-joblib>=1.3.0
-shap>=0.42.0
-matplotlib>=3.7.0
-plotly>=5.15.0
-scikit-learn>=1.3.0
 
-# The model's own library — whichever won the tournament.
-# Uncomment the one that matches your saved pipeline:
+# Core ML — must match Colab training environment exactly
+scikit-learn==1.6.1
+imbalanced-learn==0.14.1
+joblib==1.5.3
 
+# Model library — CatBoost won the tournament
+catboost==1.2.10
 
-catboost>=1.2.0
+# Explainability
+shap==0.51.0
 
-# Only needed if the winning strategy was SMOTE or ADASYN
-# (the pipeline pickle references imblearn classes)
-imbalanced-learn>=0.11.0
+# Data
+pandas==2.2.2
+numpy==2.0.2
+
+# Visualisation
+matplotlib==3.10.0
+plotly==5.24.1
