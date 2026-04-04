@@ -3,9 +3,6 @@ import pandas as pd
 from sklearn.model_selection import cross_val_score, cross_val_predict
 from typing import Callable
 from helper.feature_engineering import build_pipeline
-# =============================================================================
-# 1. HYPERPARAMETER TUNING
-# =============================================================================
 
 def run_optuna_study(
     objective_fn: Callable,
@@ -29,20 +26,24 @@ def run_optuna_study(
                          trials early. Recommended for iterative models.
     show_progress_bar  : If True, shows tqdm progress bar. Disabled by
                          default since verbose=True already prints per trial.
-    verbose            : If True, prints trial number, F1, and chosen params
-                         after every completed trial.
+    verbose            : If True, prints only when a new best score is found.
 
     Returns
     -------
     study       : Completed Optuna Study object.
     best_params : Merged dict of optimised + fixed parameters.
     """
+    best_score = float("-inf")
+
     def _trial_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        nonlocal best_score
         if trial.state == optuna.trial.TrialState.COMPLETE:
-            print(
-                f"  Trial {trial.number:>3} | Score: {trial.value:.4f} | "
-                f"Params: { {k: round(v, 4) if isinstance(v, float) else v for k, v in trial.params.items()} }"
-            )
+            if trial.value > best_score:
+                best_score = trial.value
+                print(
+                    f"  Trial {trial.number:>3} | Score: {trial.value:.4f} ▲ | "
+                    f"Params: { {k: round(v, 4) if isinstance(v, float) else v for k, v in trial.params.items()} }"
+                )
 
     sampler   = optuna.samplers.TPESampler(seed=42)
     pruner    = optuna.pruners.MedianPruner() if use_pruner else optuna.pruners.NopPruner()
