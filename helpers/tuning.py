@@ -2,7 +2,7 @@ import optuna
 import pandas as pd
 from sklearn.model_selection import cross_val_score, cross_val_predict
 from typing import Callable
-from helper.feature_engineering import build_pipeline
+from helpers.feature_engineering import build_pipeline
 
 def run_optuna_study(
     objective_fn: Callable,
