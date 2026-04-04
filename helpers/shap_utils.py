@@ -197,5 +197,5 @@ def plot_shap_waterfall(
     plt.tight_layout()
     if save_path:         
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.gcf()..savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.gcf().savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
