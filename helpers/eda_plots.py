@@ -3,13 +3,14 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-def plot_class_imbalance(train_df: pd.DataFrame) -> None:
+def plot_class_imbalance(train_df: pd.DataFrame, save_path : str | None = None) -> None:
     """
     Plot a side-by-side count bar and pie chart showing the churn class split.
 
     Parameters
     ----------
     train_df : Training DataFrame containing an 'Exited' column.
+    save_path : Path to save plot.
     """
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     palette   = sns.color_palette("muted")
@@ -27,9 +28,12 @@ def plot_class_imbalance(train_df: pd.DataFrame) -> None:
 
     plt.suptitle("Class Imbalance Overview", fontsize=12, fontweight="bold")
     plt.tight_layout()
+    if save_path:                         
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
-def plot_kde_by_churn(train_df: pd.DataFrame, cols: list[str]) -> None:
+def plot_kde_by_churn(train_df: pd.DataFrame, cols: list[str], save_path : str | None = None) -> None:
     """
     Plot KDE distributions of numeric columns split by churn status.
 
@@ -37,6 +41,7 @@ def plot_kde_by_churn(train_df: pd.DataFrame, cols: list[str]) -> None:
     ----------
     train_df : Training DataFrame with an 'Exited' column.
     cols     : List of numeric column names to plot (one subplot each).
+    save_path : Path to save plot.
     """
     fig, axes = plt.subplots(1, len(cols), figsize=(6 * len(cols), 5))
     if len(cols) == 1:
@@ -50,6 +55,9 @@ def plot_kde_by_churn(train_df: pd.DataFrame, cols: list[str]) -> None:
         ax.legend(handles, ["Retained (0)", "Churned (1)"])
 
     plt.tight_layout()
+    if save_path:                         
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
 def plot_churn_rate_bar(
@@ -58,6 +66,7 @@ def plot_churn_rate_bar(
     x_labels: list[str] | None = None,
     title: str | None = None,
     xlabel: str | None = None,
+    save_path : str | None = None
 ) -> None:
     """
     Plot churn rate (%) per category in group_col with an overall average line.
@@ -69,6 +78,7 @@ def plot_churn_rate_bar(
     x_labels  : Human-readable tick labels. Defaults to the category values.
     title     : Plot title. Defaults to f'Churn Rate by {group_col}'.
     xlabel    : Optional x-axis label.
+    save_path : Path to save plot.
     """
     churn_rate = df.groupby(group_col)["Exited"].mean() * 100
     x_ticks    = x_labels if x_labels is not None else churn_rate.index.astype(str)
@@ -94,10 +104,13 @@ def plot_churn_rate_bar(
         )
 
     plt.tight_layout()
+    if save_path:                         
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
 
-def plot_correlation_heatmap(train_df: pd.DataFrame, threshold: float = 0.7) -> None:
+def plot_correlation_heatmap(train_df: pd.DataFrame, threshold: float = 0.7, save_path : str | None = None) -> None:
     """
     Plot a lower-triangle correlation heatmap and print any high-correlation pairs.
 
@@ -105,6 +118,7 @@ def plot_correlation_heatmap(train_df: pd.DataFrame, threshold: float = 0.7) -> 
     ----------
     train_df  : Training DataFrame (numeric columns extracted automatically).
     threshold : Correlation magnitude above which pairs are flagged. Default 0.7.
+    save_path : Path to save plot.
     """
     numeric_cols = train_df.select_dtypes(include="number")
     corr_matrix = numeric_cols.corr()
@@ -115,6 +129,9 @@ def plot_correlation_heatmap(train_df: pd.DataFrame, threshold: float = 0.7) -> 
                 cmap="coolwarm", center=0, ax=ax)
     ax.set_title("Feature Correlation Heatmap")
     plt.tight_layout()
+    if save_path:                         
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.show()
 
     corr_matrix = corr_matrix.abs()
